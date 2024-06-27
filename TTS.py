@@ -1,6 +1,6 @@
 from pyomo.environ import *
 import random
-
+print('stress test')
 random.seed(5)
 
 # Create a Concrete Model
