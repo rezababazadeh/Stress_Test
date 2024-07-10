@@ -1,7 +1,6 @@
-# TTR model
-
 from pyomo.environ import *
 import random
+import pandas as pd
 
 random.seed(5)
 
@@ -40,13 +39,13 @@ k = ['P18', 'P19', 'P20']
 # Parameters
 demand = {'P18': 500, 'P19': 400, 'P20': 600}
 # parameters-capacity
-capacity = {i1: random.randint(5000,15000) for i1 in i}
+capacity = {i1: random.randint(5000, 15000) for i1 in i}
 
 # parameters-Initial Inventory
-Inventory = {i1: random.randint(1500, 4000) for i1 in i}
+Inventory = {i1: random.randint(100, 200) for i1 in i}
 
 # parameters-Time to recover
-TTR = {i1: random.uniform(4, 10) for i1 in i}
+TTR = {i1: random.randint(4, 10) for i1 in i}
 
 # parameters-profit margin
 f = {i1: random.randint(400, 800) for i1 in k}
@@ -56,7 +55,7 @@ GHG = {i1: random.randint(20, 35) for i1 in i}
 
 # parameters-GHG1 in flow between nodes
 GHG1 = {pair: random.randint(5, 15) for pair in j}
-print(GHG1)
+
 # parameters-Societal impact of each node
 SI = {i1: random.randint(1, 10) for i1 in i}
 
@@ -65,14 +64,6 @@ model.u = Var(i, domain=NonNegativeReals)
 model.y = Var(j, domain=NonNegativeReals)
 model.l = Var(k, domain=NonNegativeReals)
 
-# LP metric method
-# OBJ1=1139423(Min)
-# obj2=0 (min)
-# Obj3=8476899.43 (max)
-
-# Obj = (((sum(f[i1] * model.l[i1] for i1 in k) - 1139423.1) / 1139423.1)
-#        + (((sum(GHG[i1] * model.u[i1] for i1 in i) + sum(gh * model.y[(i1, j1)] for (i1, j1), gh in GHG1.items()))-582893.8)/582893.8)
-#        - ((276478.8 - sum(SI[i1] * model.u[i1] for i1 in i)) / 276478.8))
 # Objective functions
 Obj1 = sum(f[i1] * model.l[i1] for i1 in k)
 model.obj1 = Objective(expr=Obj1, sense=minimize)
@@ -99,11 +90,11 @@ for i1 in upstream_node:
 
 # ِDemand satisfying with no shortage
 for i1 in k:
-    model.Constraints.add(model.l[i1] + model.u[i1]+Inventory[i1]  >= demand[i1] * TTR[i1])
+    model.Constraints.add(model.l[i1] + model.u[i1] + Inventory[i1] >= demand[i1] * TTR[i1])
 
-# customer service level
+# ِUpper bound for lost sales
 for i1 in k:
-    model.Constraints.add(model.l[i1]  <= 0.5*demand[i1] * TTR[i1])
+    model.Constraints.add(model.l[i1] <= demand[i1] * TTR[i1])
 
 # Capacity constraint
 for i1 in i:
@@ -112,11 +103,8 @@ for i1 in i:
 # solver
 solver = SolverFactory('cbc')
 
-#Disruption scenarios
-#for i1 in i:
+# Disruption scenarios
 disruption_constraint = model.Constraints.add(model.u['P5'] <= 0)
-
-#Lexicographic method
 
 # Step 1: Optimize the first objective
 model.obj2.deactivate()
@@ -134,12 +122,12 @@ else:
 # Print the objective function value if solved optimally
 if results.solver.status == SolverStatus.ok and results.solver.termination_condition == TerminationCondition.optimal:
     print(f"Objective function value_1: {value(model.obj1)}")
-#model.display()
+model.display()
 opt_value_obj1 = model.obj1()
 
 # Step 2: Optimize the second objective
 #Fixing optimal value for the first objective function
-model.Constraints.add(sum(f[i1] * model.l[i1] for i1 in k)  <= 1.2*opt_value_obj1)
+model.Constraints.add(sum(f[i1] * model.l[i1] for i1 in k)  <= opt_value_obj1+0.1)
 model.obj2.activate()
 model.obj1.deactivate()
 results = solver.solve(model, tee=True)
@@ -155,12 +143,12 @@ else:
 # Print the objective function value if solved optimally
 if results.solver.status == SolverStatus.ok and results.solver.termination_condition == TerminationCondition.optimal:
     print(f"Objective function value_2: {value(model.obj2)}")
-#model.display()
+model.display()
 opt_value_obj2 = model.obj2()
 
-# Step 3: Optimize the third objective
-#Fixing optimal value for the second objective function
-model.Constraints.add((sum(GHG[i1] * model.u[i1] for i1 in i) + sum(gh * model.y[(i1, j1)] for (i1, j1), gh in GHG1.items()))  <= 1.2*opt_value_obj2)
+#  Step 3: Optimize the third objective
+# Fixing optimal value for the second objective function
+model.Constraints.add((sum(GHG[i1] * model.u[i1] for i1 in i) + sum(gh * model.y[(i1, j1)] for (i1, j1), gh in GHG1.items()))  <= opt_value_obj2+0.1)
 model.obj3.activate()
 model.obj2.deactivate()
 results = solver.solve(model, tee=True)
@@ -179,3 +167,60 @@ if results.solver.status == SolverStatus.ok and results.solver.termination_condi
 model.display()
 opt_value_obj3 = model.obj3()
 print(opt_value_obj3)
+
+# Prepare data for export to Excel
+parameters = {
+    'Node': i,
+    'Capacity': [capacity[node] for node in i],
+    'Initial_Inventory': [Inventory[node] for node in i],
+    'TTR': [TTR[node] for node in i],
+    'GHG': [GHG[node] for node in i],
+    'SI': [SI[node] for node in i]
+}
+bom_data = {
+    'From_To': [f"{key[0]}_{key[1]}" for key in r.keys()],
+    'Quantity': [value for value in r.values()]
+}
+demand_data = {
+    'Product': list(demand.keys()),
+    'Demand': list(demand.values())
+}
+ghg_flow_data = {
+    'From_To': [f"{key[0]}_{key[1]}" for key in GHG1.keys()],
+    'GHG1': list(GHG1.values())
+}
+results_data = {
+    'Node': i,
+    'u': [value(model.u[node]) for node in i],
+}
+
+flow_data = {
+    'From_To': [f"{pair[0]}_{pair[1]}" for pair in j],
+    'y': [value(model.y[pair]) for pair in j]
+}
+
+final_products_data = {
+    'Product': k,
+    'l': [value(model.l[product]) for product in k],
+}
+
+# Convert dictionaries to pandas DataFrames
+parameters_df = pd.DataFrame(parameters)
+results_df = pd.DataFrame(results_data)
+flow_df = pd.DataFrame(flow_data)
+final_products_df = pd.DataFrame(final_products_data)
+
+# Combine BOM, Demand, and GHG1 into parameters
+bom_df = pd.DataFrame(bom_data)
+demand_df = pd.DataFrame(demand_data)
+ghg_flow_df = pd.DataFrame(ghg_flow_data)
+
+# Combine additional parameters into the parameters DataFrame
+parameters_df = pd.concat([parameters_df, bom_df, demand_df, ghg_flow_df], axis=1)
+
+# Write to Excel
+with pd.ExcelWriter('supply_chain_results.xlsx') as writer:
+    parameters_df.to_excel(writer, sheet_name='Parameters', index=False)
+    results_df.to_excel(writer, sheet_name='Results', index=False)
+    flow_df.to_excel(writer, sheet_name='Flow', index=False)
+    final_products_df.to_excel(writer, sheet_name='FinalProducts', index=False)
