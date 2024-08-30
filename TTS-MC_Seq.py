@@ -190,6 +190,8 @@ plt.ylabel('Values' if i == 0 else '')
 # Adjust layout for better spacing
 plt.tight_layout()
 
+# Save the directed graph as SVG
+plt.savefig("TTS_MC.svg", format="svg")
 # Show the plot
 plt.show()
 

@@ -3,6 +3,8 @@ import random
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+import networkx as nx
+
 random.seed(5)
 
 # Create a Concrete Model
@@ -220,29 +222,92 @@ print('OBJ_1:', opt_value_obj1)
 print('OBJ_2:', opt_value_obj2)
 print('OBJ_3:', opt_value_obj3)
 
-# Extract the values of u(f,p) and store them in a dictionary
-u_values = {(f, p): m.u[f, p].value for f in m.Factories for p in m.Products if (f, p) in m.Factory_Product}
+# Demonstrating production plan u(f,p) in Gantt Chart
+data = []
+for factory, product in m.Factory_Product:
+    if value(m.u[factory, product]) > 100:  # Check if production occurs
+        data.append({
+            'Factory': factory,
+            'Product': product,
+            'Start': 0,  # Assuming all start at the same time, customize as needed
+            'Duration': int(value(m.u[factory, product])),
+            'Label': f'{product}:{int(value(m.u[factory, product]))}'
+        })
 
-# Convert the dictionary to a DataFrame
-u_df = pd.DataFrame(list(u_values.items()), columns=['Factory_Product', 'Quantity'])
+# Convert the data into a DataFrame for easy plotting
+df = pd.DataFrame(data)
 
-# Split the 'Factory_Product' column into 'Factory' and 'Product'
-u_df[['Factory', 'Product']] = pd.DataFrame(u_df['Factory_Product'].tolist(), index=u_df.index)
+# Create a color palette based on products
+unique_products = df['Product'].unique()
+palette = sns.color_palette("hsv", len(unique_products))
+product_colors = dict(zip(unique_products, palette))
 
-# Drop the 'Factory_Product' column
-u_df = u_df.drop(columns=['Factory_Product'])
+# Add color column to the DataFrame
+df['Color'] = df['Product'].map(product_colors)
 
-# Set up the figure and axes
-plt.figure(figsize=(14, 8))
+# Plotting
+plt.figure(figsize=(14, 10))
+sns.set(style="white")
 
-# Plot the grouped bar chart
-sns.barplot(x='Factory', y='Quantity', hue='Product', data=u_df, palette='Set2')
+# Plot each row as a bar
+for idx, row in df.iterrows():
+    plt.barh(row['Factory'], row['Duration'], left=row['Start'], color=row['Color'], edgecolor='black')
 
-# Add title and labels
-plt.title('Production Quantities by Factory and Product')
-plt.xlabel('Factory')
-plt.ylabel('Quantity Produced')
-plt.legend(title='Product')
+    # Add text labels within the bars
+    plt.text(
+        x=row['Start'] + row['Duration'] / 2,  # Place text in the middle of the bar
+        y=row['Factory'],  # Align text with the factory on the y-axis
+        s=row['Label'],  # Text to display (e.g., "P3:3400")
+        va='center',  # Vertical alignment: center
+        ha='center',  # Horizontal alignment: center
+        color='white'  # Text color (adjust based on your bar colors)
+    )
 
-# Display the plot
+# Add custom labels for products
+for product, color in product_colors.items():
+    plt.bar(0, 0, color=color, label=product)  # Dummy bars for legend
+
+# Create a legend with product colors
+plt.legend(title="Products", bbox_to_anchor=(1, 1), loc='upper left')
+
+# Set labels and title
+plt.xlabel("Production amount")
+plt.ylabel("Factory")
+plt.title("Production plan")
+# Save the Gantt chart as SVG
+plt.savefig("gantt_chart.svg", format="svg")
+plt.show()
+
+
+# Demonstrating flow variable y(a,b,c,d) in a Graph (We have show only the connections)
+# Create a directed graph
+# Create a directed graph
+G = nx.DiGraph()
+
+# Iterate over all y variables in the model
+for key, flow in m.y.items():
+    # key is a tuple (a, b, c, d), e.g., ('Factory1', 'ProductA', 'Factory3', 'ProductB')
+    # Extract the relevant factory indices and product label from the tuple
+    origin, product_label, destination, _ = key
+
+    # Add edge if the flow is greater than 0
+    if flow.value > 100:  # Assuming flow is a Pyomo variable object, use .value to get its value
+        # Store both the product label and the integer weight as the edge label
+        G.add_edge(origin, destination, weight=int(flow.value), product=product_label)
+
+# Position nodes using a layout for better visualization
+pos = nx.spring_layout(G)
+
+# Draw the graph with edge labels (product label + integer flow value)
+plt.figure(figsize=(16, 10))
+nx.draw(G, pos, with_labels=True, node_color='lightblue', node_size=3000, font_size=10, font_weight='bold', arrows=True)
+
+# Get edge labels in the format "P1: 234"
+edge_labels = {edge: f"{data['product']}: {int(data['weight'])}"
+               for edge, data in G.edges.items()}
+nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=10)
+
+plt.title('Directed Graph of Factory Connections with Products and Weights')
+# Save the directed graph as SVG
+plt.savefig("directed_graph.svg", format="svg")
 plt.show()

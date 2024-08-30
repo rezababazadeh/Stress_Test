@@ -285,6 +285,8 @@ for i, dataset in enumerate(data):
 # Adjust layout for better spacing
 plt.tight_layout()
 
+# Save the directed graph as SVG
+plt.savefig("TTR_MC.svg", format="svg")
 # Show the plot
 plt.show()
 
